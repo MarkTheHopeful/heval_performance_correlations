@@ -1,3 +1,10 @@
+How-To-Run:
+
+1. Install Grazie api client: `pip3 install grazie_api_gateway_client`
+2. Download and unpack the dataset from the [humaneval repo](https://github.com/openai/human-eval) (data)
+3. Acquire token and provide it as an environment variable `AI_TOKEN`
+4. Run `python3 main.py`. Parameters can be specified via command line (no documentation yet)
+
 Things to do:
 
 - [x] Get the right system promt for human eval/human eval+
