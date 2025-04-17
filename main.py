@@ -1,4 +1,6 @@
 import os
+import sys
+from pathlib import Path
 import json
 from math import comb
 from grazie.api.client.gateway import AuthType, GrazieApiGatewayClient, GrazieAgent
@@ -7,11 +9,12 @@ from grazie.api.client.profiles import Profile
 from grazie.api.client.endpoints import GrazieApiGatewayUrls
 
 token = os.getenv("AI_TOKEN")
+url = GrazieApiGatewayUrls.PRODUCTION if os.getenv("IS_PROD") else GrazieApiGatewayUrls.STAGING
 
 client = GrazieApiGatewayClient(
-    url = GrazieApiGatewayUrls.STAGING,
+    url = url,
     grazie_jwt_token = token, # Provide the authentication token
-    auth_type = AuthType.APPLICATION, # Set the user authentication type
+    auth_type = AuthType.USER, # Set the user authentication type
     grazie_agent = GrazieAgent(name="grazie-api-gateway-client-heval-test", version="dev") # Define the agent name and version
 )
 
@@ -20,7 +23,7 @@ SYSTEM_PROMPT = """
     Your response must consist of a single Python function definition only — no explanations, comments, or additional output. Return strictly valid Python code.
 """
 
-def makeCall(task, sys_prompt=SYSTEM_PROMPT):
+def makeCall(task, profile, sys_prompt=SYSTEM_PROMPT):
     chat = (
                 ChatPrompt()
                 .add_system(sys_prompt)
@@ -28,7 +31,7 @@ def makeCall(task, sys_prompt=SYSTEM_PROMPT):
             )
     response = client.chat(
             chat = chat,
-            profile = Profile.OPENAI_GPT_4
+            profile = profile
             )
     return response.content
 
@@ -36,7 +39,7 @@ def load_tasks(data):
     with open(data, 'r') as f:
         return [json.loads(line) for line in f]
 
-def run_some_task(i, path):
+def run_some_task(i, path, llm_profile):
     tasks = load_tasks(path)
     if i < 0 or i >= len(tasks):
         raise IndexError(f"Index {i} is out of range")
@@ -47,7 +50,7 @@ def run_some_task(i, path):
 
     print(f"\n=== Task {i} | ID: {task_id} ===")
     try:
-        solution = makeCall(prompt)
+        solution = makeCall(prompt, llm_profile)
         print("Generated solution:\n", solution)
         return {
             "task_id": task_id,
@@ -60,8 +63,8 @@ def run_some_task(i, path):
         print(f"Error on task {task_id}: {e}")
         return None
 
-def evaluate_some(i, dataset_path="HumanEval.jsonl"):
-    result = run_some_task(i, dataset_path)
+def evaluate_some(i, llm_profile, dataset_path="HumanEval.jsonl"):
+    result = run_some_task(i, dataset_path, llm_profile)
     if result is None:
         return
 
@@ -169,7 +172,7 @@ def evaluate_some(i, dataset_path="HumanEval.jsonl"):
 
 #     return results
 
-def run_all_tasks(dataset_path, output_path="generated_solutions.jsonl", max_index=5, num_candidates=3):
+def run_all_tasks(dataset_path, llm_profile, output_path="generated_solutions.jsonl", max_index=5, num_candidates=3):
     tasks = load_tasks(dataset_path)
     with open(output_path, 'w') as out_file:
         for i, task in enumerate(tasks):
@@ -184,7 +187,7 @@ def run_all_tasks(dataset_path, output_path="generated_solutions.jsonl", max_ind
             # Generate multiple candidates per task
             for cand in range(num_candidates):
                 try:
-                    solution = makeCall(prompt)
+                    solution = makeCall(prompt, llm_profile)
                     if not solution.strip():
                         raise ValueError("No response.")
                     print(f"Candidate {cand} solution generated.")
@@ -204,7 +207,54 @@ def compute_pass(n, c, k):
         return 0.0
     return 1 - comb(n - c, k) / comb(n, k)
 
-def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", max_tasks=None, k=0):
+class SolutionMetric:
+    def __init__(self, name, metric_function):
+        self.name = f"SolM: {name}"
+        self.f = metric_function
+
+    def __call__(self, solution_candidate):
+        return self.f(solution_candidate)
+
+class ComparativeMetric:
+    def __init__(self, name, metric_function):
+        self.name = f"ComM: {name}"
+        self.f = metric_function
+
+    def __call__(self, solution_candidate, reference_solution):
+        return self.f(solution_candidate, reference_solution)
+
+class TaskMetric:
+    def __init__(self, name, metric_function):
+        self.name = f"TasM: {name}"
+        self.f = metric_function
+
+    def __call__(self, task_text):
+        return self.f(task_text)
+
+
+def total_text_length(solution):
+    return sum(map(lambda x: len(x.strip().rstrip()), solution.split("\n")))
+
+def lines_count(solution):
+    return len(list(filter(lambda x: len(x) > 0, solution.split("\n"))))
+
+def words_count(task_text):
+    return len(list(filter(lambda x: len(x.strip().rstrip()) > 0, task_text.split())))
+
+SOLUTION_METRICS = {
+    "total_text_length": SolutionMetric("Total text length", total_text_length),
+    "lines_count": SolutionMetric("Lines count", lines_count),
+}
+
+COMPARATIVE_METRICS = {}
+
+TASK_METRICS = {
+    "total_text_length": TaskMetric("Total text length", total_text_length),
+    "lines_count": TaskMetric("Lines count", lines_count),
+    "words_count": TaskMetric("Words count", words_count),
+}
+
+def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", output_path="evaluation_results.jsonl", max_tasks=None, k=0):
     """
     Evaluate candidate solutions grouped by task and compute pass@k.
 
@@ -213,27 +263,27 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", max_t
     """
     tasks = {task["task_id"]: task for task in load_tasks(dataset_path)}
     grouped_solutions = {}
-    
+
     with open(solutions_path, 'r') as f:
         for line in f:
             record = json.loads(line)
             grouped_solutions.setdefault(record["task_id"], []).append(record["solution"])
-    
+
     task_ids = list(grouped_solutions.keys())
     if max_tasks is not None:
         task_ids = task_ids[:max_tasks]
-    
+
     results = []
     for task_id in task_ids:
         task = tasks[task_id]
         prompt = task["prompt"]
         entry_point = task["entry_point"]
         test_code = task["test"]
-        
+
         solutions = grouped_solutions[task_id]
         n = len(solutions)
-        c = 0 
-        
+        c = 0
+
         for idx, solution in enumerate(solutions):
             namespace = {}
             full_code = f"{prompt.strip()}\n{solution.strip()}\ncandidate = {entry_point}"
@@ -245,7 +295,7 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", max_t
                 print(f"Task {task_id} candidate {idx} PASS")
             except Exception as e:
                 print(f"Task {task_id} candidate {idx} FAIL: {e}")
-        
+
         pass_at_k = compute_pass(n, c, k)
         print(f"\nTask {task_id}: n = {n}, correct = {c}, pass@{k} = {pass_at_k:.4f}\n")
         results.append({
@@ -254,15 +304,86 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", max_t
             "correct_candidates": c,
             "pass@k": pass_at_k,
         })
-    
+
     if results:
         avg_pass_at_k = sum(r["pass@k"] for r in results) / len(results)
         print(f"Average pass@{k}: {avg_pass_at_k:.4f}")
     else:
         print("No tasks were evaluated.")
 
+    with open(output_path, 'w') as f:
+        json.dump(results, f)
     return results
 
+def perform_metrics(dataset_path, solutions_path, output_path, max_tasks=None, k=0,
+                    solution_metrics = SOLUTION_METRICS.keys(),
+                    comparative_metrics = COMPARATIVE_METRICS.keys(),
+                    task_metrics = TASK_METRICS.keys()):
+    tasks = {task["task_id"]: task for task in load_tasks(dataset_path)}
+    grouped_solutions = {}
+
+    with open(solutions_path, 'r') as f:
+        for line in f:
+            record = json.loads(line)
+            grouped_solutions.setdefault(record["task_id"], []).append(record["solution"])
+
+    task_ids = list(grouped_solutions.keys())
+    if max_tasks is not None:
+        task_ids = task_ids[:max_tasks]
+
+    results = []
+    for task_id in task_ids:
+        task = tasks[task_id]
+        prompt = task["prompt"]
+        reference_solution = task["canonical_solution"]
+
+        result = {"task_id": task_id}
+        for task_metric in task_metrics:
+            metric = TASK_METRICS[task_metric]
+            result[metric.name] = metric(prompt)
+
+        solutions = grouped_solutions[task_id]
+        n = len(solutions)
+        for c_metric in comparative_metrics:
+            metric = COMPARATIVE_METRICS[c_metric]
+            result[metric.name] = []
+            for idx, solution in enumerate(solutions):
+                result[metric.name].append(metric(solution, reference_solution))
+            result[f"Mean {metric.name}"] = sum(result[metric.name]) / n
+
+        for s_metric in solution_metrics:
+            metric = SOLUTION_METRICS[s_metric]
+            result[metric.name] = []
+            for idx, solution in enumerate(solutions):
+                result[metric.name].append(metric(solution))
+            result[f"Mean {metric.name}"] = sum(result[metric.name]) / n
+
+
+        results.append(result)
+
+    with open(output_path, 'w') as f:
+        json.dump(results, f)
+    return results
+
+
+def name_from_config(llm_name, tasks, k):
+    return f"{llm_name}-{tasks}-{k}"
+
+LLM_USED = {"claude-3.7": Profile.ANTHROPIC_CLAUDE_37_SONNET,
+            "gpt-4": Profile.OPENAI_GPT_4}
+
 if __name__ == "__main__":
-    run_all_tasks("HumanEval.jsonl", "generated_solutions.jsonl", max_index=10)
-    evaluate_all("HumanEval.jsonl", "generated_solutions.jsonl", max_tasks=10, k=5)
+    llm = sys.argv[1] if len(sys.argv) > 1 else "claude-3.7"
+    max_tasks = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+    k = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+
+    file_prefix = name_from_config(llm, max_tasks, k)
+
+    solutions_filename = f"{file_prefix}-generated_solutions.jsonl"
+    eval_results_filename = f"{file_prefix}-evaluation_results.jsonl"
+    metrics_run_filename = f"{file_prefix}-with-metrics.jsonl"
+    if not Path(solutions_filename).exists():
+        run_all_tasks("HumanEval.jsonl", llm_profile=LLM_USED[llm], output_path=solutions_filename, max_index=max_tasks)
+
+    evaluate_all("HumanEval.jsonl", solutions_filename, output_path=eval_results_filename, max_tasks=max_tasks, k=k)
+    perform_metrics("HumanEval.jsonl", solutions_filename, output_path=metrics_run_filename, max_tasks=max_tasks, k=k)
