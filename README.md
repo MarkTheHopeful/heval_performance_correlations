@@ -4,8 +4,8 @@ Things to do:
 - [x] Add iteration over downloaded dataset (that sends the task to the model)
 - [x] Add evaluation function for the results produced by an LLM (probably copy the one from the original repo)
 - [x] Add pass@k function (optionally)
-- [ ] Add a basic metric on task just as an example
-- [ ] Add a basic metric on generated solution just as an example
+- [x] Add a basic metric on task just as an example
+- [x] Add a basic metric on generated solution just as an example
 - [ ] After everything else is done: some visualization
 
 P.S.

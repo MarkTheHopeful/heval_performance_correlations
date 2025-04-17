@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 import json
+from difflib import SequenceMatcher
 from math import comb
 from grazie.api.client.gateway import AuthType, GrazieApiGatewayClient, GrazieAgent
 from grazie.api.client.chat.prompt import ChatPrompt
@@ -241,12 +242,18 @@ def lines_count(solution):
 def words_count(task_text):
     return len(list(filter(lambda x: len(x.strip().rstrip()) > 0, task_text.split())))
 
+def gestalt_text_similarity(task_text, ref_text):
+    matcher = SequenceMatcher(None, task_text, ref_text)
+    return matcher.ratio()
+
 SOLUTION_METRICS = {
     "total_text_length": SolutionMetric("Total text length", total_text_length),
     "lines_count": SolutionMetric("Lines count", lines_count),
 }
 
-COMPARATIVE_METRICS = {}
+COMPARATIVE_METRICS = {
+    "gestalt_text_similarity": ComparativeMetric("Gestalt text similarity", gestalt_text_similarity),
+}
 
 TASK_METRICS = {
     "total_text_length": TaskMetric("Total text length", total_text_length),
@@ -283,6 +290,7 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
         solutions = grouped_solutions[task_id]
         n = len(solutions)
         c = 0
+        passes = []
 
         for idx, solution in enumerate(solutions):
             namespace = {}
@@ -292,9 +300,11 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
                 exec(test_code, namespace)
                 namespace["check"](namespace["candidate"])
                 c += 1
+                passes.append(True)
                 print(f"Task {task_id} candidate {idx} PASS")
             except Exception as e:
                 print(f"Task {task_id} candidate {idx} FAIL: {e}")
+                passes.append(False)
 
         pass_at_k = compute_pass(n, c, k)
         print(f"\nTask {task_id}: n = {n}, correct = {c}, pass@{k} = {pass_at_k:.4f}\n")
@@ -303,6 +313,7 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
             "total_candidates": n,
             "correct_candidates": c,
             "pass@k": pass_at_k,
+            "passes": passes,
         })
 
     if results:
@@ -312,20 +323,28 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
         print("No tasks were evaluated.")
 
     with open(output_path, 'w') as f:
-        json.dump(results, f)
+        for result in results:
+            f.write(json.dumps(result) + "\n")
     return results
 
-def perform_metrics(dataset_path, solutions_path, output_path, max_tasks=None, k=0,
+def perform_metrics(dataset_path, solutions_path, evaluated_path, output_path, max_tasks=None, k=0,
                     solution_metrics = SOLUTION_METRICS.keys(),
                     comparative_metrics = COMPARATIVE_METRICS.keys(),
                     task_metrics = TASK_METRICS.keys()):
     tasks = {task["task_id"]: task for task in load_tasks(dataset_path)}
     grouped_solutions = {}
+    evaluation_results = {}
+    pass_at_k = {}
 
-    with open(solutions_path, 'r') as f:
+    with open(solutions_path, 'r') as f, open(evaluated_path, 'r') as f_e:
         for line in f:
             record = json.loads(line)
             grouped_solutions.setdefault(record["task_id"], []).append(record["solution"])
+        for line in f_e:
+            record = json.loads(line)
+            evaluation_results[record["task_id"]] = record["passes"]
+            pass_at_k[record["task_id"]] = record["pass@k"]
+
 
     task_ids = list(grouped_solutions.keys())
     if max_tasks is not None:
@@ -337,7 +356,7 @@ def perform_metrics(dataset_path, solutions_path, output_path, max_tasks=None, k
         prompt = task["prompt"]
         reference_solution = task["canonical_solution"]
 
-        result = {"task_id": task_id}
+        result = {"task_id": task_id, "passes": evaluation_results[task_id], "pass@k": pass_at_k[task_id]}
         for task_metric in task_metrics:
             metric = TASK_METRICS[task_metric]
             result[metric.name] = metric(prompt)
@@ -362,7 +381,8 @@ def perform_metrics(dataset_path, solutions_path, output_path, max_tasks=None, k
         results.append(result)
 
     with open(output_path, 'w') as f:
-        json.dump(results, f)
+        for result in results:
+            f.write(json.dumps(result) + "\n")
     return results
 
 
@@ -386,4 +406,4 @@ if __name__ == "__main__":
         run_all_tasks("HumanEval.jsonl", llm_profile=LLM_USED[llm], output_path=solutions_filename, max_index=max_tasks)
 
     evaluate_all("HumanEval.jsonl", solutions_filename, output_path=eval_results_filename, max_tasks=max_tasks, k=k)
-    perform_metrics("HumanEval.jsonl", solutions_filename, output_path=metrics_run_filename, max_tasks=max_tasks, k=k)
+    perform_metrics("HumanEval.jsonl", solutions_filename, evaluated_path=eval_results_filename, output_path=metrics_run_filename, max_tasks=max_tasks, k=k)
