@@ -1,10 +1,10 @@
 import os
-import sys
 from pathlib import Path
 from grazie.api.client.endpoints import GrazieApiGatewayUrls
 from grazie.api.client.profiles import Profile
 from metrics import perform_metrics
 from execution import run_all_tasks, evaluate_all, LLMProvider
+import argparse
 
 token = os.getenv("AI_TOKEN")
 url = GrazieApiGatewayUrls.PRODUCTION if os.getenv("IS_PROD") else GrazieApiGatewayUrls.STAGING
@@ -23,9 +23,16 @@ LLM_USED = {"claude-3.7": Profile.ANTHROPIC_CLAUDE_37_SONNET,
             "gpt-4": Profile.OPENAI_GPT_4}
 
 if __name__ == "__main__":
-    llm = sys.argv[1] if len(sys.argv) > 1 else "claude-3.7"
-    max_tasks = int(sys.argv[2]) if len(sys.argv) > 2 else 11
-    k = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+    parser = argparse.ArgumentParser(
+        prog="HEval Performance Correlations Runner",
+        description="Runs HumanEval on specified model and measures some metrics on solutions, tasks text and canonical solutions.",
+    )
+    parser.add_argument("--llm", default="claude-3.7")
+    parser.add_argument("--max_tasks", default=10, type=int)
+    parser.add_argument("--k", default=5, type=int)
+
+    parsed = parser.parse_args()
+    llm, max_tasks, k = parsed.llm, parsed.max_tasks, parsed.k
 
     provider = LLMProvider(url, token, LLM_USED[llm], SYSTEM_PROMPT)
 
