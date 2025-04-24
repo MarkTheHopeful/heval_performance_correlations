@@ -1,6 +1,7 @@
 from difflib import SequenceMatcher
 import json
 from utils import load_tasks
+from graph_building import code_cfg_similarity
 
 
 class SolutionMetric:
@@ -47,6 +48,7 @@ def gestalt_text_similarity(task_text, ref_text):
     return matcher.ratio()
 
 
+
 SOLUTION_METRICS = {
     "total_text_length": SolutionMetric("Total text length", total_text_length),
     "lines_count": SolutionMetric("Lines count", lines_count),
@@ -54,6 +56,7 @@ SOLUTION_METRICS = {
 
 COMPARATIVE_METRICS = {
     "gestalt_text_similarity": ComparativeMetric("Gestalt text similarity", gestalt_text_similarity),
+    "cfg_code_similarity": ComparativeMetric("CFG code similarity", code_cfg_similarity),
 }
 
 TASK_METRICS = {

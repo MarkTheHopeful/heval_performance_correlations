@@ -1,0 +1,3 @@
+grazie_api_gateway_client
+py2cfg
+networkx[default]
