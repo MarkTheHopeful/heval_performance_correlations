@@ -1,1 +1,5 @@
 *.jsonl
+__pycache__/
+.env
+.venv
+.idea

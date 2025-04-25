@@ -90,6 +90,7 @@ def perform_metrics(dataset_path, solutions_path, evaluated_path, output_path, m
 
     results = []
     for task_id in task_ids:
+        print(f"Metrics calculation starting for {task_id}")
         task = tasks[task_id]
         prompt = task["prompt"]
         reference_solution = task["canonical_solution"]
