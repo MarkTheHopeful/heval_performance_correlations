@@ -15,34 +15,48 @@ SYSTEM_PROMPT = """
 """
 
 
-def name_from_config(llm_name, tasks, k):
-    return f"{llm_name}-{tasks}-{k}"
+def name_from_config(llm_name, tasks, candidates, k):
+    return f"{llm_name}-{tasks}-{candidates}-{k}"
 
 
 LLM_USED = {"claude-3.7": Profile.ANTHROPIC_CLAUDE_37_SONNET,
-            "gpt-4": Profile.OPENAI_GPT_4}
+            "gpt-4": Profile.OPENAI_GPT_4,
+            "claude-3h": Profile.ANTHROPIC_CLAUDE_3_HAIKU,
+            "gpt-4o-mini": Profile.OPENAI_GPT_4_O_MINI}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="HEval Performance Correlations Runner",
         description="Runs HumanEval on specified model and measures some metrics on solutions, tasks text and canonical solutions.",
     )
-    parser.add_argument("--llm", default="claude-3.7")
-    parser.add_argument("--max_tasks", default=10, type=int)
-    parser.add_argument("--k", default=5, type=int)
+    parser.add_argument("--llm",               default="claude-3.7")
+    parser.add_argument("--max_tasks",         default=10, type=int)
+    parser.add_argument("--k",                 default=3,  type=int)
+    parser.add_argument("--num_candidates",    default=5,  type=int)
 
     parsed = parser.parse_args()
-    llm, max_tasks, k = parsed.llm, parsed.max_tasks, parsed.k
+    llm, max_tasks, k, num_candidates = (
+        parsed.llm,
+        parsed.max_tasks,
+        parsed.k,
+        parsed.num_candidates,
+    )
 
     provider = LLMProvider(url, token, LLM_USED[llm], SYSTEM_PROMPT)
 
-    file_prefix = name_from_config(llm, max_tasks, k)
+    file_prefix = name_from_config(llm, max_tasks, num_candidates, k)
 
     solutions_filename = f"{file_prefix}-generated_solutions.jsonl"
     eval_results_filename = f"{file_prefix}-evaluation_results.jsonl"
     metrics_run_filename = f"{file_prefix}-with-metrics.jsonl"
     if not Path(solutions_filename).exists():
-        run_all_tasks("HumanEval.jsonl", provider=provider, output_path=solutions_filename, max_index=max_tasks)
+        run_all_tasks(
+            "HumanEval.jsonl",
+            provider=provider,
+            output_path=solutions_filename,
+            max_index=max_tasks,
+            num_candidates=num_candidates,
+        )
 
     evaluate_all("HumanEval.jsonl", solutions_filename, output_path=eval_results_filename, max_tasks=max_tasks, k=k)
     perform_metrics("HumanEval.jsonl", solutions_filename, evaluated_path=eval_results_filename,

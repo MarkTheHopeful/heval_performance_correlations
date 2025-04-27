@@ -5,12 +5,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def load_metrics(path):
     records = []
     with open(path, 'r') as f:
         for line in f:
             records.append(json.loads(line))
     return pd.DataFrame(records)
+
 
 def plot_pass_at_k(df, output_dir):
     plt.figure(figsize=(10, 5))
@@ -22,6 +24,7 @@ def plot_pass_at_k(df, output_dir):
     plt.savefig(os.path.join(output_dir, 'pass_at_k_by_task.png'))
     plt.close()
 
+
 def plot_scatter(df, x_col, y_col, output_dir):
     plt.figure(figsize=(6, 6))
     plt.scatter(df[x_col], df[y_col])
@@ -32,6 +35,7 @@ def plot_scatter(df, x_col, y_col, output_dir):
     fname = f'scatter_{x_col}_vs_{y_col}.png'.replace(' ', '_').replace(':','')
     plt.savefig(os.path.join(output_dir, fname))
     plt.close()
+
 
 def plot_correlation_heatmap(df, output_dir):
     numeric = df.select_dtypes(include=[np.number])
@@ -47,6 +51,7 @@ def plot_correlation_heatmap(df, output_dir):
     plt.savefig(os.path.join(output_dir, 'correlation_matrix.png'))
     plt.close()
 
+
 def plot_histograms(df, cols, output_dir):
     for col in cols:
         if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
@@ -60,25 +65,45 @@ def plot_histograms(df, cols, output_dir):
             plt.savefig(os.path.join(output_dir, fname))
             plt.close()
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Visualize HumanEval metrics from JSONL file")
-    parser.add_argument('--metrics', required=True, help='Path to metrics JSONL file')
-    parser.add_argument('--output-dir', default='visualizations', help='Directory to save output plots')
+    parser = argparse.ArgumentParser(description="Visualize HumanEval metrics from JSONL file with configurable plots")
+    parser.add_argument('--metrics',      required=True, help='Path to metrics JSONL file')
+    parser.add_argument('--output-dir',   default='visualizations', help='Directory to save output plots')
+    parser.add_argument('--no-bar',       action='store_true', help='Skip bar plot of pass@k')
+    parser.add_argument('--scatter',      nargs=2, metavar=('X_COL', 'Y_COL'), help='Plot scatter of two columns')
+    parser.add_argument('--heatmap',      action='store_true', help='Include correlation heatmap')
+    parser.add_argument('--hist',         nargs='+', metavar='COL', help='List of columns for histogram plots')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     df = load_metrics(args.metrics)
 
-    # plots
-    plot_pass_at_k(df, args.output_dir)
-    # prompt length vs pass@k (example for scatter plot)
-    if 'TasM: Total text length' in df.columns:
-        plot_scatter(df, 'TasM: Total text length', 'pass@k', args.output_dir)
-    # correlation heatmap
-    plot_correlation_heatmap(df, args.output_dir)
-    # histograms for key numeric columns
-    hist_cols = ['pass@k', 'TasM: Total text length', 'Mean SolM: Total text length']
-    plot_histograms(df, hist_cols, args.output_dir)
+    # bar chart
+    if not args.no_bar:
+        if 'pass@k' in df.columns:
+            plot_pass_at_k(df, args.output_dir)
+        else:
+            print("Warning: 'pass@k' column not found, skipping bar plot.")
+
+    # scatter plot
+    if args.scatter:
+        x_col, y_col = args.scatter
+        if x_col in df.columns and y_col in df.columns:
+            plot_scatter(df, x_col, y_col, args.output_dir)
+        else:
+            print(f"Warning: columns {x_col}, {y_col} not both present; skipping scatter.")
+
+    # heatmap
+    if args.heatmap:
+        plot_correlation_heatmap(df, args.output_dir)
+
+    # histograms
+    if args.hist:
+        plot_histograms(df, args.hist, args.output_dir)
+    else:
+        default_hist = ['pass@k', 'TasM: Total text length', 'Mean SolM: Total text length']
+        plot_histograms(df, default_hist, args.output_dir)
 
     print(f"Visualizations saved to {args.output_dir}")
 
