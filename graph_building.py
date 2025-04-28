@@ -2,6 +2,7 @@ from textwrap import dedent
 
 from py2cfg import CFGBuilder
 import networkx as nx
+from utils import set_timeout
 
 
 def walk_cfg(current_graph, used, cfg_node, nid_map):
@@ -41,13 +42,24 @@ def preprocess(code):
 def code_cfg_similarity(text1, text2):
     text1 = preprocess(text1)
     text2 = preprocess(text2)
-    edges1 = code_to_cfg_edges(text1)
-    edges2 = code_to_cfg_edges(text2)
-    div_const = 2 * (len(edges1) + len(edges2))
+    try:
+        edges1 = code_to_cfg_edges(text1)
+        edges2 = code_to_cfg_edges(text2)
+    except SyntaxError:
+        return 0.0
+    div_const = 2 * (2 + len(edges1) + len(edges2))
     g1, g2 = nx.MultiDiGraph(edges1), nx.MultiDiGraph(edges2)
     if div_const == 0: # Both graphs are empty (aka no edges, like a simple return statement)
-        return 1
-    return 1 - nx.graph_edit_distance(g1, g2) / div_const
+        return 1.0
+    result = 0.0
+    try:
+        set_timeout(100)
+        result = 1 - nx.graph_edit_distance(g1, g2) / div_const
+    except Exception: # Timeout from signal
+        pass
+    if result < 0:
+        raise Exception("What the hell???")
+    return result
 
 
 if __name__ == "__main__":

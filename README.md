@@ -15,10 +15,10 @@ Things to do:
 - [x] Add a basic metric on generated solution just as an example
 - [x] After everything else is done: some visualization
 - [ ] Add more possible visualizations
-- [ ] Fix current CFG metric (it produces negative values sometimes) (Mark)
+- [x] Fix current CFG metric (it produces negative values sometimes) (Mark)
 - [ ] Add config files to load and store run configurations (Mark)
 - [ ] Locate and highlight situations of kind "same nontrivial CFG, different text"
-- [ ] Add HumanEval+ and other datasets of this kind
+- [x] Add HumanEval+ and other datasets of this kind
 - [ ] Add ability to run metrics candidate-vise, not only task-vise
 - [ ] Parse generated solutions more accurate (strip ```python from the beginning for some models, for example)
 - [ ] Add more possible prompts and processing of them (i.e. allow to think before submitting, related to the previous task)
