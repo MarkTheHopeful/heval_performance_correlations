@@ -165,7 +165,7 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
             namespace = {}
             full_code = f"{prompt.strip()}\n{solution.strip()}\ncandidate = {entry_point}"
             try:
-                set_timeout(60)
+                set_timeout(10)
                 exec(full_code, namespace)
                 exec(test_code, namespace)
                 namespace["check"](namespace["candidate"])

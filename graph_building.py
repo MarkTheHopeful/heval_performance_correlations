@@ -57,14 +57,12 @@ def code_cfg_similarity(text1, text2):
         return 0.0
     div_const = 2 * (2 + len(edges1) + len(edges2))
     g1, g2 = nx.MultiDiGraph(edges1), nx.MultiDiGraph(edges2)
-    if div_const == 0: # Both graphs are empty (aka no edges, like a simple return statement)
+    if len(edges1) + len(edges2) == 0: # Both graphs are empty (aka no edges, like a simple return statement)
         return 1.0
-    result = 0.0
-    try:
-        set_timeout(100)
-        result = 1 - nx.graph_edit_distance(g1, g2) / div_const
-    except Exception: # Timeout from signal
-        pass
+    if len(edges1) > 0 and len(edges2) > 0:
+        result = 1 - nx.graph_edit_distance(g1, g2, roots=(0, 0), timeout=60) / div_const
+    else:
+        result = 1 - nx.graph_edit_distance(g1, g2, timeout=60) / div_const
     if result < 0:
         raise Exception("What the hell???")
     return result
