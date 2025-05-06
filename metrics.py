@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 import json
 from utils import load_tasks
-from graph_building import code_cfg_similarity
+from graph_building import code_cfg_similarity, cfg_triviality
 
 
 class SolutionMetric:
@@ -47,11 +47,10 @@ def gestalt_text_similarity(task_text, ref_text):
     matcher = SequenceMatcher(None, task_text, ref_text)
     return matcher.ratio()
 
-
-
 SOLUTION_METRICS = {
     "total_text_length": SolutionMetric("Total text length", total_text_length),
     "lines_count": SolutionMetric("Lines count", lines_count),
+    "triviality": SolutionMetric("CFG Triviality", cfg_triviality)
 }
 
 COMPARATIVE_METRICS = {
@@ -115,6 +114,13 @@ def perform_metrics(dataset_path, solutions_path, evaluated_path, output_path, m
             for idx, solution in enumerate(solutions):
                 result[metric.name].append(metric(solution))
             result[f"Mean {metric.name}"] = sum(result[metric.name]) / n
+
+        interest = []
+        triviality, cfg_similarity, text_similarity = result["SolM: CFG Triviality"], result["ComM: CFG code similarity"], result["ComM: Gestalt text similarity"]
+        for i in range(len(triviality)):
+            interest.append(cfg_similarity[i] * (1 - triviality[i]) * (1 - text_similarity[i]))
+        result["Interest"] = interest
+        result["Mean interest"] = sum(interest) / n
 
         results.append(result)
 

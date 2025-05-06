@@ -2,7 +2,7 @@ import json
 from math import comb
 from grazie.api.client.gateway import AuthType, GrazieApiGatewayClient, GrazieAgent
 from grazie.api.client.chat.prompt import ChatPrompt
-from utils import load_tasks
+from utils import load_tasks, set_timeout
 
 
 class LLMProvider:
@@ -165,6 +165,7 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
             namespace = {}
             full_code = f"{prompt.strip()}\n{solution.strip()}\ncandidate = {entry_point}"
             try:
+                set_timeout(60)
                 exec(full_code, namespace)
                 exec(test_code, namespace)
                 namespace["check"](namespace["candidate"])

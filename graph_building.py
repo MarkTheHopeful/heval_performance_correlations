@@ -38,6 +38,14 @@ def preprocess(code):
 
     return dedent(code)
 
+def cfg_triviality(text):
+    text = preprocess(text)
+    try:
+        edges = code_to_cfg_edges(text)
+    except: # This is dumb
+        return -1.0
+    return max(0.0, 1 - len(edges) / 4)
+
 
 def code_cfg_similarity(text1, text2):
     text1 = preprocess(text1)
@@ -45,7 +53,7 @@ def code_cfg_similarity(text1, text2):
     try:
         edges1 = code_to_cfg_edges(text1)
         edges2 = code_to_cfg_edges(text2)
-    except SyntaxError:
+    except: # SyntaxError or AttributeError since generated code is something weird, idk
         return 0.0
     div_const = 2 * (2 + len(edges1) + len(edges2))
     g1, g2 = nx.MultiDiGraph(edges1), nx.MultiDiGraph(edges2)

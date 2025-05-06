@@ -15,12 +15,14 @@ SYSTEM_PROMPT = """
 """
 
 DATASETS = {
-    "heval":     "HumanEval.jsonl",
+    "heval": "HumanEval.jsonl",
     "hevalplus": "HumanEvalPlus-OriginFmt.jsonl",
 }
 
+
 def name_from_config(llm_name, dataset_label, tasks, candidates, k):
     return f"{llm_name}-{dataset_label}-{tasks}-{candidates}-{k}"
+
 
 LLM_USED = {"claude-3.7": Profile.ANTHROPIC_CLAUDE_37_SONNET,
             "claude-3.5-sonnet": Profile.ANTHROPIC_CLAUDE_35_SONNET,
@@ -34,11 +36,11 @@ if __name__ == "__main__":
         prog="HEval Performance Correlations Runner",
         description="Runs HumanEval on specified model and measures some metrics on solutions, tasks text and canonical solutions.",
     )
-    parser.add_argument("--llm",           default="claude-3.7",     help="Model key")
-    parser.add_argument("--dataset",       default="heval",         help="Dataset key (heval|hevalplus) or path to JSONL")
-    parser.add_argument("--max_tasks",     default=10,   type=int,   help="Number of tasks to run")
-    parser.add_argument("--num_candidates", default=5,    type=int,   help="Number of candidate solutions per task")
-    parser.add_argument("--k",             default=3,    type=int,   help="pass@k value for evaluation")
+    parser.add_argument("--llm", default="claude-3.7", help="Model key")
+    parser.add_argument("--dataset", default="heval", help="Dataset key (heval|hevalplus) or path to JSONL")
+    parser.add_argument("--max_tasks", default=10, type=int, help="Number of tasks to run")
+    parser.add_argument("--num_candidates", default=5, type=int, help="Number of candidate solutions per task")
+    parser.add_argument("--k", default=3, type=int, help="pass@k value for evaluation")
 
     parsed = parser.parse_args()
     llm = parsed.llm
@@ -70,13 +72,14 @@ if __name__ == "__main__":
             num_candidates=num_candidates,
         )
 
-    evaluate_all(
-        dataset_path,
-        solutions_filename,
-        output_path=eval_results_filename,
-        max_tasks=max_tasks,
-        k=k
-    )
+    if not Path(eval_results_filename).exists():
+        evaluate_all(
+            dataset_path,
+            solutions_filename,
+            output_path=eval_results_filename,
+            max_tasks=max_tasks,
+            k=k
+        )
 
     perform_metrics(
         dataset_path,
