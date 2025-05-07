@@ -1,14 +1,28 @@
 import json
+import multiprocessing
 from math import comb
+from pathlib import Path
+
+from grazie.api.client.profiles import Profile
+from grazie.api.client.endpoints import GrazieApiGatewayUrls
 from grazie.api.client.gateway import AuthType, GrazieApiGatewayClient, GrazieAgent
 from grazie.api.client.chat.prompt import ChatPrompt
-from utils import load_tasks, set_timeout
 
+from config import Config
+from utils import load_tasks
+
+LLM_USED = {"claude-3.7": Profile.ANTHROPIC_CLAUDE_37_SONNET,
+            "claude-3.5-sonnet": Profile.ANTHROPIC_CLAUDE_35_SONNET,
+            "gpt-4": Profile.OPENAI_GPT_4,
+            "gpt-4o-mini": Profile.OPENAI_GPT_4_O_MINI,
+            "claude-3h": Profile.ANTHROPIC_CLAUDE_3_HAIKU,
+            }
 
 class LLMProvider:
-    def __init__(self, url, token, profile, prompt):
-        self.profile = profile
-        self.prompt = prompt
+    def __init__(self, token, config):
+        url = url = GrazieApiGatewayUrls.PRODUCTION if config.is_prod else GrazieApiGatewayUrls.STAGING
+        self.profile = LLM_USED[config.model.llm]
+        self.prompt = config.model.prompt
         self.client = GrazieApiGatewayClient(
             url=url,
             grazie_jwt_token=token,
@@ -92,9 +106,11 @@ def evaluate_some(i, provider, dataset_path="HumanEval.jsonl"):
     }
 
 
-def run_all_tasks(dataset_path, provider, output_path="generated_solutions.jsonl", max_index=5, num_candidates=3):
-    tasks = load_tasks(dataset_path)
-    with open(output_path, 'w') as out_file:
+def run_all_tasks(config: Config, provider: LLMProvider, output_path: Path):
+    max_index = config.evaluation.tasks
+    num_candidates = config.evaluation.candidates
+    tasks = load_tasks(config.data.dataset_path)
+    with output_path.open(mode='w') as out_file:
         for i, task in enumerate(tasks):
             if max_index is not None and i >= max_index:
                 break
@@ -129,21 +145,41 @@ def compute_pass(n, c, k):
     return 1 - comb(n - c, k) / comb(n, k)
 
 
-def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", output_path="evaluation_results.jsonl",
-                 max_tasks=None, k=0):
-    """
-    Evaluate candidate solutions grouped by task and compute pass@k.
+def run_exec_in_thread(queue, full_code, test_code):
+    namespace = {}
+    try:
+        exec(full_code, namespace)
+        exec(test_code, namespace)
+        result = namespace["check"](namespace["candidate"])
+        queue.put(("pass", result))
+    except Exception as e:
+        queue.put(("fail", str(e)))
 
-    max_tasks: Optional limit on the number of tasks to evaluate.
-    k: The value 'k' for computing pass@k.
-    """
-    tasks = {task["task_id"]: task for task in load_tasks(dataset_path)}
+def run_exec(full_code, test_code, timeout):
+    queue = multiprocessing.Queue()
+    p = multiprocessing.Process(target=run_exec_in_thread, args=(queue, full_code, test_code))
+    p.start()
+    p.join(timeout)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return False, "Timeout"
+
+    status, result = queue.get()
+    return status == "pass", result
+
+def evaluate_all(config: Config, solutions_path: Path, output_path: Path):
+    tasks = {task["task_id"]: task for task in load_tasks(config.data.dataset_path)}
     grouped_solutions = {}
 
-    with open(solutions_path, 'r') as f:
+    with solutions_path.open() as f:
         for line in f:
             record = json.loads(line)
             grouped_solutions.setdefault(record["task_id"], []).append(record["solution"])
+
+    max_tasks = config.evaluation.tasks
+    k = config.evaluation.k
 
     task_ids = list(grouped_solutions.keys())
     if max_tasks is not None:
@@ -162,19 +198,14 @@ def evaluate_all(dataset_path, solutions_path="generated_solutions.jsonl", outpu
         passes = []
 
         for idx, solution in enumerate(solutions):
-            namespace = {}
             full_code = f"{prompt.strip()}\n{solution.strip()}\ncandidate = {entry_point}"
-            try:
-                set_timeout(10)
-                exec(full_code, namespace)
-                exec(test_code, namespace)
-                namespace["check"](namespace["candidate"])
+            status, message = run_exec(full_code, test_code, timeout=10)
+            passes.append(status)
+            if status:
                 c += 1
-                passes.append(True)
                 print(f"Task {task_id} candidate {idx} PASS")
-            except Exception as e:
-                print(f"Task {task_id} candidate {idx} FAIL: {e}")
-                passes.append(False)
+            else:
+                print(f"Task {task_id} candidate {idx} FAIL: {message}")
 
         pass_at_k = compute_pass(n, c, k)
         print(f"\nTask {task_id}: n = {n}, correct = {c}, pass@{k} = {pass_at_k:.4f}\n")

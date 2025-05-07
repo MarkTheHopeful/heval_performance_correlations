@@ -1,5 +1,8 @@
 from difflib import SequenceMatcher
 import json
+from pathlib import Path
+
+from config import Config
 from utils import load_tasks
 from graph_building import code_cfg_similarity, cfg_triviality
 
@@ -65,16 +68,16 @@ TASK_METRICS = {
 }
 
 
-def perform_metrics(dataset_path, solutions_path, evaluated_path, output_path, max_tasks=None, k=0,
+def perform_metrics(config: Config, solutions_path: Path, eval_results_path: Path, output_path: Path,
                     solution_metrics=SOLUTION_METRICS.keys(),
                     comparative_metrics=COMPARATIVE_METRICS.keys(),
                     task_metrics=TASK_METRICS.keys()):
-    tasks = {task["task_id"]: task for task in load_tasks(dataset_path)}
+    tasks = {task["task_id"]: task for task in load_tasks(config.data.dataset_path)}
     grouped_solutions = {}
     evaluation_results = {}
     pass_at_k = {}
 
-    with open(solutions_path, 'r') as f, open(evaluated_path, 'r') as f_e:
+    with solutions_path.open() as f, eval_results_path.open() as f_e:
         for line in f:
             record = json.loads(line)
             grouped_solutions.setdefault(record["task_id"], []).append(record["solution"])
@@ -84,8 +87,7 @@ def perform_metrics(dataset_path, solutions_path, evaluated_path, output_path, m
             pass_at_k[record["task_id"]] = record["pass@k"]
 
     task_ids = list(grouped_solutions.keys())
-    if max_tasks is not None:
-        task_ids = task_ids[:max_tasks]
+    task_ids = task_ids[:config.evaluation.tasks]
 
     results = []
     for task_id in task_ids:

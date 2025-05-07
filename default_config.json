@@ -1,0 +1,18 @@
+{
+  "is_prod": true,
+  "model": {
+    "llm": "claude-3.7",
+    "prompt": "You are an exceptionally intelligent coding assistant that consistently delivers accurate and reliable responses to user instructions.\n Your response must consist of a single Python function definition only — no explanations, comments, or additional output. Return strictly valid Python code."
+
+  },
+  "data": {
+    "dataset": "humaneval",
+    "dataset_path": "./datasets/HumanEval.jsonl"
+  },
+  "evaluation": {
+    "tasks": 10,
+    "candidates": 5,
+    "k": 3,
+    "metrics": ["exact_match", "runtime"]
+  }
+}

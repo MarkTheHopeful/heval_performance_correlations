@@ -2,7 +2,6 @@ from textwrap import dedent
 
 from py2cfg import CFGBuilder
 import networkx as nx
-from utils import set_timeout
 
 
 def walk_cfg(current_graph, used, cfg_node, nid_map):
