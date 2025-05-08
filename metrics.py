@@ -8,8 +8,9 @@ from graph_building import code_cfg_similarity, cfg_triviality
 
 
 class SolutionMetric:
-    def __init__(self, name, metric_function):
-        self.name = f"SolM: {name}"
+    def __init__(self, name, metric_function, full_name=None):
+        self.name = name
+        self.full_name = name if full_name is None else full_name
         self.f = metric_function
 
     def __call__(self, solution_candidate):
@@ -17,8 +18,9 @@ class SolutionMetric:
 
 
 class ComparativeMetric:
-    def __init__(self, name, metric_function):
-        self.name = f"ComM: {name}"
+    def __init__(self, name, metric_function, full_name=None):
+        self.name = name
+        self.full_name = name if full_name is None else full_name
         self.f = metric_function
 
     def __call__(self, solution_candidate, reference_solution):
@@ -26,8 +28,9 @@ class ComparativeMetric:
 
 
 class TaskMetric:
-    def __init__(self, name, metric_function):
-        self.name = f"TasM: {name}"
+    def __init__(self, name, metric_function, full_name=None):
+        self.name = name
+        self.full_name = name if full_name is None else full_name
         self.f = metric_function
 
     def __call__(self, task_text):
@@ -50,29 +53,31 @@ def gestalt_text_similarity(task_text, ref_text):
     matcher = SequenceMatcher(None, task_text, ref_text)
     return matcher.ratio()
 
-SOLUTION_METRICS = {
-    "total_text_length": SolutionMetric("Total text length", total_text_length),
-    "lines_count": SolutionMetric("Lines count", lines_count),
-    "triviality": SolutionMetric("CFG Triviality", cfg_triviality)
-}
 
-COMPARATIVE_METRICS = {
-    "gestalt_text_similarity": ComparativeMetric("Gestalt text similarity", gestalt_text_similarity),
-    "cfg_code_similarity": ComparativeMetric("CFG code similarity", code_cfg_similarity),
-}
-
-TASK_METRICS = {
-    "total_text_length": TaskMetric("Total text length", total_text_length),
-    "lines_count": TaskMetric("Lines count", lines_count),
-    "words_count": TaskMetric("Words count", words_count),
+ALL_METRICS = {
+    "solution_length": SolutionMetric("solution_length", total_text_length, "Solution length (characters)"),
+    "solution_lines": SolutionMetric("solution_lines", lines_count, "Solution length (lines)"),
+    "triviality": SolutionMetric("triviality", cfg_triviality, "Solution CFG triviality"),
+    "gestalt_similarity": ComparativeMetric("gestalt_similarity", gestalt_text_similarity, "Gestalt similarity between"),
+    "cfg_similarity": ComparativeMetric("cfg_similarity", code_cfg_similarity, "CFG similarity between"),
+    "task_length": TaskMetric("task_length", total_text_length, "Task length (characters)"),
+    "task_lines": TaskMetric("task_lines", lines_count, "Task length (lines)"),
+    "task_words": TaskMetric("task_words", words_count, "Task length (words)"),
 }
 
 
-def perform_metrics(config: Config, solutions_path: Path, eval_results_path: Path, output_path: Path,
-                    solution_metrics=SOLUTION_METRICS.keys(),
-                    comparative_metrics=COMPARATIVE_METRICS.keys(),
-                    task_metrics=TASK_METRICS.keys()):
+def get_metrics_split(config: Config):
+    all_metrics_keys = ALL_METRICS.keys() if len(config.evaluation.metrics) == 0 else config.evaluation.metrics
+    all_metrics = [ALL_METRICS[x] for x in all_metrics_keys]
+    solution_metrics = list(filter(lambda metric: isinstance(metric, SolutionMetric), all_metrics))
+    comparative_metrics = list(filter(lambda metric: isinstance(metric, ComparativeMetric), all_metrics))
+    task_metrics = list(filter(lambda metric: isinstance(metric, TaskMetric), all_metrics))
+    return solution_metrics, comparative_metrics, task_metrics
+
+
+def perform_metrics(config: Config, solutions_path: Path, eval_results_path: Path, output_path: Path):
     tasks = {task["task_id"]: task for task in load_tasks(config.data.dataset_path)}
+    solution_metrics, comparative_metrics, task_metrics = get_metrics_split(config)
     grouped_solutions = {}
     evaluation_results = {}
     pass_at_k = {}
@@ -97,28 +102,26 @@ def perform_metrics(config: Config, solutions_path: Path, eval_results_path: Pat
         reference_solution = task["canonical_solution"]
 
         result = {"task_id": task_id, "passes": evaluation_results[task_id], "pass@k": pass_at_k[task_id]}
-        for task_metric in task_metrics:
-            metric = TASK_METRICS[task_metric]
+        for metric in task_metrics:
             result[metric.name] = metric(prompt)
 
         solutions = grouped_solutions[task_id]
         n = len(solutions)
-        for c_metric in comparative_metrics:
-            metric = COMPARATIVE_METRICS[c_metric]
+        for metric in comparative_metrics:
             result[metric.name] = []
             for idx, solution in enumerate(solutions):
                 result[metric.name].append(metric(solution, reference_solution))
             result[f"Mean {metric.name}"] = sum(result[metric.name]) / n
 
-        for s_metric in solution_metrics:
-            metric = SOLUTION_METRICS[s_metric]
+        for metric in solution_metrics:
             result[metric.name] = []
             for idx, solution in enumerate(solutions):
                 result[metric.name].append(metric(solution))
             result[f"Mean {metric.name}"] = sum(result[metric.name]) / n
 
         interest = []
-        triviality, cfg_similarity, text_similarity = result["SolM: CFG Triviality"], result["ComM: CFG code similarity"], result["ComM: Gestalt text similarity"]
+        triviality, cfg_similarity, text_similarity = result["triviality"], result[
+            "cfg_similarity"], result["gestalt_similarity"]
         for i in range(len(triviality)):
             interest.append(cfg_similarity[i] * (1 - triviality[i]) * (1 - text_similarity[i]))
         result["Interest"] = interest

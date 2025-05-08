@@ -70,11 +70,10 @@ def explode_runs(df):
     # identify which columns are per‐run lists
     list_cols = [
         'passes',
-        'ComM: Gestalt text similarity',
-        'ComM: CFG code similarity',
-        'SolM: Total text length',
-        'SolM: Lines count',
-        'SolM: CFG Triviality',
+        'gestalt_similarity',
+        'cfg_similarity',
+        'solution_length',
+        'triviality',
         'Interest'
     ]
 
@@ -147,11 +146,10 @@ def main():
 
     if args.pass_by_sol:
         e_df = explode_runs(df)
-        plot_histograms_by_pass(e_df, ['ComM_Gestalt_text_similarity',
-        'ComM_CFG_code_similarity',
-        'SolM_Total_text_length',
-        'SolM_Lines_count',
-        'SolM_CFG_Triviality',
+        plot_histograms_by_pass(e_df, ['gestalt_similarity',
+        'cfg_similarity',
+        'solution_length',
+        'triviality',
         'Interest'
     ], args.output_dir)
 
