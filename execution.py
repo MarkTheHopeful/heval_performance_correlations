@@ -1,5 +1,7 @@
+import io
 import json
 import multiprocessing
+import unittest
 from math import comb
 from pathlib import Path
 
@@ -150,7 +152,34 @@ def run_exec_in_thread(queue, full_code, test_code):
     try:
         exec(full_code, namespace)
         exec(test_code, namespace)
-        result = namespace["check"](namespace["candidate"])
+        if "check" in namespace:
+            result = namespace["check"](namespace["candidate"])
+        elif "TestCases" in namespace:
+            test_cases_class = namespace["TestCases"]
+            loader = unittest.TestLoader()
+            suite = loader.loadTestsFromTestCase(test_cases_class)
+            output_buffer = io.StringIO()
+            runner = unittest.TextTestRunner(stream=output_buffer, verbosity=2)
+            test_result = runner.run(suite)
+            if not test_result.wasSuccessful():
+                error_messages = ["Unittest execution failed:"]
+
+                if test_result.errors:
+                    error_messages.append("\nERRORS:")
+                    for test, traceback_str in test_result.errors:
+                        error_messages.append(f"  Test: {test}\n  Traceback:\n{traceback_str}")
+
+                if test_result.failures:
+                    error_messages.append("\nFAILURES:")
+                    for test, traceback_str in test_result.failures:
+                        error_messages.append(f"  Test: {test}\n  Traceback:\n{traceback_str}")
+
+                raise Exception("\n".join(error_messages))
+            else:
+                result = "OK"
+        else:
+            raise RuntimeError("No test cases defined.")
+        # result = namespace["check"](namespace["candidate"])
         queue.put(("pass", result))
     except Exception as e:
         queue.put(("fail", str(e)))
